@@ -7,9 +7,28 @@ import { Animation } from '../models/Animation.js';
 import { Model3D } from '../models/Model3D.js';
 import { Lab } from '../models/Lab.js';
 import { Question } from '../models/Question.js';
+import { QuizAttempt } from '../models/QuizAttempt.js';
+import { DailyModelTest } from '../models/DailyModelTest.js';
 import { generateSlug } from '../utils/generateSlug.js';
 
 export const runBulkSeed = async (payload = {}) => {
+  // যদি শুরু থেকে ক্লিন ডাটাবেসে সিড করতে চান (clearExisting: true)
+  if (payload.clearExisting === true) {
+    await Promise.all([
+      Subject.deleteMany({}),
+      Chapter.deleteMany({}),
+      Topic.deleteMany({}),
+      Lesson.deleteMany({}),
+      Formula.deleteMany({}),
+      Animation.deleteMany({}),
+      Model3D.deleteMany({}),
+      Lab.deleteMany({}),
+      Question.deleteMany({}),
+      QuizAttempt.deleteMany({}),
+      DailyModelTest.deleteMany({}),
+    ]);
+  }
+
   const summary = {
     subjects: { upserted: 0, errors: [] },
     chapters: { upserted: 0, errors: [] },
@@ -22,7 +41,7 @@ export const runBulkSeed = async (payload = {}) => {
     questions: { upserted: 0, errors: [] },
   };
 
-  // 1. Seed Subjects (Upsert by unique 'name')
+  // 1. Seed Subjects
   if (Array.isArray(payload.subjects)) {
     for (const item of payload.subjects) {
       try {
@@ -38,7 +57,7 @@ export const runBulkSeed = async (payload = {}) => {
     }
   }
 
-  // 2. Seed Chapters (Resolve subjectName or subjectId, Upsert by subjectId + slug)
+  // 2. Seed Chapters (Supports subjectName or subjectId)
   if (Array.isArray(payload.chapters)) {
     for (const item of payload.chapters) {
       try {
@@ -62,7 +81,7 @@ export const runBulkSeed = async (payload = {}) => {
     }
   }
 
-  // 3. Seed Topics (Resolve chapterSlug or chapterId, Upsert by topicId)
+  // 3. Seed Topics (Supports chapterSlug or chapterId)
   if (Array.isArray(payload.topics)) {
     for (const item of payload.topics) {
       try {
@@ -72,9 +91,9 @@ export const runBulkSeed = async (payload = {}) => {
         } else if (item.chapterSlug) {
           chapter = await Chapter.findOne({ slug: item.chapterSlug.toLowerCase() }).lean();
         }
-        if (!chapter) throw new Error(`Parent chapter not found for topic '${item.title}'`);
+        if (!chapter) throw new Error(`Parent chapter '${item.chapterSlug}' not found`);
 
-        const slug = item.slug ? generateSlug(item.slug) : generateSlug(item.titleEn);
+        const slug = item.slug ? generateSlug(payloadSlugOrTitle(item)) : generateSlug(item.titleEn);
         const topicId = item.topicId ? generateSlug(item.topicId) : `${chapter.slug}-${slug}`;
 
         await Topic.findOneAndUpdate(
@@ -93,14 +112,29 @@ export const runBulkSeed = async (payload = {}) => {
     }
   }
 
-  // 4. Seed Formulas (Upsert by formulaId)
+  // 4. Seed Formulas (Supports subjectName & topicKey/topicId)
   if (Array.isArray(payload.formulas)) {
     for (const item of payload.formulas) {
       try {
+        let subjectId = item.subjectId;
+        if (!subjectId && item.subjectName) {
+          const sub = await Subject.findOne({ name: item.subjectName.toLowerCase() }).lean();
+          if (sub) subjectId = sub._id;
+        }
+
+        let topicId = item.topicId;
+        if (topicId && !/^[0-9a-fA-F]{24}$/.test(topicId)) {
+          const top = await Topic.findOne({ topicId: topicId.toLowerCase() }).lean();
+          if (top) topicId = top._id;
+        } else if (!topicId && item.topicKey) {
+          const top = await Topic.findOne({ topicId: item.topicKey.toLowerCase() }).lean();
+          if (top) topicId = top._id;
+        }
+
         const formulaId = generateSlug(item.formulaId);
         await Formula.findOneAndUpdate(
           { formulaId },
-          { $set: { ...item, formulaId } },
+          { $set: { ...item, formulaId, subjectId, topicId } },
           { upsert: true, new: true, runValidators: true }
         );
         summary.formulas.upserted++;
@@ -110,7 +144,7 @@ export const runBulkSeed = async (payload = {}) => {
     }
   }
 
-  // 5. Seed Animations (Upsert by animationId)
+  // 5. Seed Animations
   if (Array.isArray(payload.animations)) {
     for (const item of payload.animations) {
       try {
@@ -127,7 +161,7 @@ export const runBulkSeed = async (payload = {}) => {
     }
   }
 
-  // 6. Seed 3D Models (Upsert by modelId)
+  // 6. Seed 3D Models
   if (Array.isArray(payload.models)) {
     for (const item of payload.models) {
       try {
@@ -144,7 +178,7 @@ export const runBulkSeed = async (payload = {}) => {
     }
   }
 
-  // 7. Seed Labs (Upsert by labId)
+  // 7. Seed Virtual Labs
   if (Array.isArray(payload.labs)) {
     for (const item of payload.labs) {
       try {
@@ -161,13 +195,28 @@ export const runBulkSeed = async (payload = {}) => {
     }
   }
 
-  // 8. Seed Lessons (Upsert by chapterId + topicId + title)
+  // 8. Seed Lessons (Supports chapterSlug & topicKey)
   if (Array.isArray(payload.lessons)) {
     for (const item of payload.lessons) {
       try {
+        let chapterId = item.chapterId;
+        if (!chapterId && item.chapterSlug) {
+          const ch = await Chapter.findOne({ slug: item.chapterSlug.toLowerCase() }).lean();
+          if (ch) chapterId = ch._id;
+        }
+
+        let topicId = item.topicId;
+        if (topicId && !/^[0-9a-fA-F]{24}$/.test(topicId)) {
+          const top = await Topic.findOne({ topicId: topicId.toLowerCase() }).lean();
+          if (top) topicId = top._id;
+        } else if (!topicId && item.topicKey) {
+          const top = await Topic.findOne({ topicId: item.topicKey.toLowerCase() }).lean();
+          if (top) topicId = top._id;
+        }
+
         await Lesson.findOneAndUpdate(
-          { chapterId: item.chapterId, topicId: item.topicId, title: item.title },
-          { $set: item },
+          { chapterId, topicId, title: item.title },
+          { $set: { ...item, chapterId, topicId } },
           { upsert: true, new: true, runValidators: true }
         );
         summary.lessons.upserted++;
@@ -177,13 +226,34 @@ export const runBulkSeed = async (payload = {}) => {
     }
   }
 
-  // 9. Seed Questions (Duplicate prevention by chapterId + question text)
+  // 9. Seed Questions (Supports subjectName, chapterSlug & topicKey)
   if (Array.isArray(payload.questions)) {
     for (const item of payload.questions) {
       try {
+        let subjectId = item.subjectId;
+        if (!subjectId && item.subjectName) {
+          const sub = await Subject.findOne({ name: item.subjectName.toLowerCase() }).lean();
+          if (sub) subjectId = sub._id;
+        }
+
+        let chapterId = item.chapterId;
+        if (!chapterId && item.chapterSlug) {
+          const ch = await Chapter.findOne({ slug: item.chapterSlug.toLowerCase() }).lean();
+          if (ch) chapterId = ch._id;
+        }
+
+        let topicId = item.topicId;
+        if (topicId && !/^[0-9a-fA-F]{24}$/.test(topicId)) {
+          const top = await Topic.findOne({ topicId: topicId.toLowerCase() }).lean();
+          if (top) topicId = top._id;
+        } else if (!topicId && item.topicKey) {
+          const top = await Topic.findOne({ topicId: item.topicKey.toLowerCase() }).lean();
+          if (top) topicId = top._id;
+        }
+
         await Question.findOneAndUpdate(
-          { chapterId: item.chapterId, question: item.question.trim() },
-          { $set: item },
+          { chapterId, question: item.question.trim() },
+          { $set: { ...item, subjectId, chapterId, topicId } },
           { upsert: true, new: true, runValidators: true }
         );
         summary.questions.upserted++;
@@ -195,3 +265,7 @@ export const runBulkSeed = async (payload = {}) => {
 
   return summary;
 };
+
+function payloadSlugOrTitle(item) {
+  return item.slug || item.titleEn;
+}
