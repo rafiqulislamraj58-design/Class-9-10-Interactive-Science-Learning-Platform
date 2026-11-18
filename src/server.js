@@ -1,20 +1,19 @@
-import 'dotenv/config';
-import app from './app/app.js';
-
-const PORT = process.env.PORT || 5000;
+import app from './app.js';
+import { env } from './config/env.js';
+import { connectDB } from './config/db.js';
+import { logger } from './config/logger.js';
+import { initDailyTestCron } from './jobs/dailyTest.job.js';
 
 const startServer = async () => {
-  try {
-   
-    
-    app.listen(PORT, () => {
-      console.log(`🚀 Server is running in ${process.env.NODE_ENV} mode on port ${PORT}`);
-    });
-  } catch (error) {
-    console.error('❌ Failed to start server:', error);
-    process.exit(1);
-  }
-};
+  await connectDB();
 
+  // Initialize Scheduled Jobs
+  initDailyTestCron();
+
+  app.listen(env.PORT, () => {
+    logger.info(`🚀 Server running in ${env.NODE_ENV} mode on http://localhost:${env.PORT}`);
+    logger.info(`🩺 Health check available at http://localhost:${env.PORT}/api/v1/health`);
+  });
+};
 
 startServer();
