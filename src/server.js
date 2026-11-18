@@ -8,8 +8,8 @@ import { ROLES } from './constants/roles.js';
 
 const ensureSuperAdminExists = async () => {
   try {
-    const email = process.env.ADMIN_EMAIL || 'admin@scienceplatform.bd';
-    const password = process.env.ADMIN_PASSWORD || 'Admin@123456';
+    const email = process.env.ADMIN_EMAIL ;
+    const password = process.env.ADMIN_PASSWORD ;
 
     const existingAdmin = await Admin.findOne({ email: email.toLowerCase() });
     if (!existingAdmin) {
