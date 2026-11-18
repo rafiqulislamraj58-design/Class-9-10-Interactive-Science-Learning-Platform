@@ -28,6 +28,6 @@ app.use('/api/v1', v1Routes);
 // 404 & Global Error Handlers
 app.use(notFoundHandler);
 app.use(errorHandler);
-app.get('/', (req, res) => res.json({ message: 'NCTB Science Platform API is running!' }));
+
 
 export default app;

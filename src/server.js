@@ -32,6 +32,7 @@ const startServer = async () => {
 
   // Initialize Scheduled Jobs
   initDailyTestCron();
+  app.get('/', (req, res) => res.json({ message: 'NCTB Science Platform API is running!' }));
 
   app.listen(env.PORT, () => {
     logger.info(`🚀 Server running in ${env.NODE_ENV} mode on port ${env.PORT}`);
